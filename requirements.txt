@@ -1,3 +1,5 @@
-Flask==2.2.3
+Flask==2.2.5
 gunicorn==20.1.0
 flask-sqlalchemy==3.0.5
+Werkzeug==2.2.3  # Explicitly specify a compatible version of Werkzeug
+SQLAlchemy>=1.4.0  # Ensure SQLAlchemy is included and meets the minimum requirement
