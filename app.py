@@ -1,34 +1,38 @@
-# app.py
-from flask import Flask, render_template, request, redirect, url_for, flash # type: ignore
-import os
-import json
+from flask import Flask, render_template, request, redirect, url_for, flash
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
-# Simulated storage database
-DB_FILE = 'files_db.json'
+# Configure the SQLite Database
+# Database location
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///files.db'
+# Disable modification tracking
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Database model for storing files
 
 
-def get_files():
-    if not os.path.exists(DB_FILE):
-        return []
-    with open(DB_FILE, 'r') as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
+class File(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), unique=True, nullable=False)
+    size = db.Column(db.String(50), nullable=False)
+    uploaded_at = db.Column(db.String(50), nullable=False)
+
+    def __repr__(self):
+        return f"<File {self.name}>"
 
 
-def save_files(files):
-    with open(DB_FILE, 'w') as f:
-        json.dump(files, f, indent=4)
+# Initialize the database (create the table if it doesn't exist)
+with app.app_context():
+    db.create_all()
 
 
 @app.route('/')
 def index():
-    files = get_files()
+    files = File.query.all()  # Query all files from the database
     return render_template('index.html', files=files)
 
 
@@ -41,22 +45,20 @@ def upload_file():
         flash('Filename is required', 'error')
         return redirect(url_for('index'))
 
-    files = get_files()
     # Check if file already exists
-    for file in files:
-        if file['name'] == filename:
-            flash('File already exists', 'error')
-            return redirect(url_for('index'))
+    existing_file = File.query.filter_by(name=filename).first()
+    if existing_file:
+        flash('File already exists', 'error')
+        return redirect(url_for('index'))
 
-    # Add new file
-    files.append({
-        'id': len(files) + 1,
-        'name': filename,
-        'size': file_size or '1 MB',
-        'uploaded_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-
-    save_files(files)
+    # Add new file to the database
+    new_file = File(
+        name=filename,
+        size=file_size or '1 MB',
+        uploaded_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    db.session.add(new_file)
+    db.session.commit()
     flash('File uploaded successfully', 'success')
     return redirect(url_for('index'))
 
@@ -69,25 +71,25 @@ def update_file(file_id):
         flash('New filename is required', 'error')
         return redirect(url_for('index'))
 
-    files = get_files()
-    for file in files:
-        if file['id'] == file_id:
-            file['name'] = new_filename
-            file['uploaded_at'] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S") + " (updated)"
-            save_files(files)
-            flash('File updated successfully', 'success')
-            break
+    file_to_update = File.query.get(file_id)  # Get file by ID
+    if file_to_update:
+        file_to_update.name = new_filename
+        file_to_update.uploaded_at = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S") + " (updated)"
+        db.session.commit()
+        flash('File updated successfully', 'success')
 
     return redirect(url_for('index'))
 
 
 @app.route('/delete/<int:file_id>')
 def delete_file(file_id):
-    files = get_files()
-    files = [file for file in files if file['id'] != file_id]
-    save_files(files)
-    flash('File deleted successfully', 'success')
+    file_to_delete = File.query.get(file_id)  # Get file by ID
+    if file_to_delete:
+        db.session.delete(file_to_delete)
+        db.session.commit()
+        flash('File deleted successfully', 'success')
+
     return redirect(url_for('index'))
 
 
